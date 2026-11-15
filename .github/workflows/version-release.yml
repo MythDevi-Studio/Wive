@@ -58,4 +58,4 @@ jobs:
             echo "Release $TAG already exists; nothing to dispatch."
             exit 0
           fi
-          gh workflow run release.yml --ref "$TAG"
+          gh workflow run release.yml --ref Dev -f "release_tag=$TAG"
