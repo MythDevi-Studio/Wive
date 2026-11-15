@@ -3,6 +3,23 @@
 version = 4
 
 [[package]]
+name = "Wive"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "env_logger",
+ "fuzzy-matcher",
+ "log",
+ "ropey",
+ "serde",
+ "serde_json",
+ "skia-safe",
+ "softbuffer",
+ "tokio",
+ "winit",
+]
+
+[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -994,23 +1011,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "moce"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "env_logger",
- "fuzzy-matcher",
- "log",
- "ropey",
- "serde",
- "serde_json",
- "skia-safe",
- "softbuffer",
- "tokio",
- "winit",
 ]
 
 [[package]]
