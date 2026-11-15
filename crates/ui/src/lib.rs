@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use editor_core::Editor;
-use skia_safe::{Canvas, Color, Font, FontMgr, FontStyle, ImageInfo, Paint, Rect};
+use skia_safe::{
+    Canvas, Color, Font, FontMgr, FontStyle, ImageInfo, Paint, PaintStyle, Path, Rect,
+};
 use softbuffer::Surface;
 use syntax::{Language, TokenKind, language_for_file, tokenize_line};
 use winit::window::{Icon, Window};
@@ -29,6 +31,25 @@ const YELLOW: Color = Color::from_argb(255, 229, 190, 112);
 const PURPLE: Color = Color::from_argb(255, 197, 155, 255);
 const CYAN: Color = Color::from_argb(255, 117, 204, 220);
 const RED: Color = Color::from_argb(255, 238, 129, 137);
+
+const ICON_ARROW_DOWN: &str = include_str!("../../../assets/icons/arrow-down-to-line.svg");
+const ICON_ELLIPSIS: &str = include_str!("../../../assets/icons/ellipsis.svg");
+const ICON_FILE_CODE: &str = include_str!("../../../assets/icons/file-code.svg");
+const ICON_FILE_PLUS: &str = include_str!("../../../assets/icons/file-plus.svg");
+const ICON_FOLDER_OPEN: &str = include_str!("../../../assets/icons/folder-open.svg");
+const ICON_SEARCH: &str = include_str!("../../../assets/icons/search.svg");
+
+enum IconShape {
+    Path(Path),
+    Circle(f32, f32, f32),
+}
+
+struct WelcomeCard<'a> {
+    icon: &'a str,
+    title: &'a str,
+    description: &'a str,
+    shortcut: &'a str,
+}
 
 /// Action requested by a click on the interface.
 pub enum PointerAction {
@@ -319,11 +340,12 @@ fn draw_header(
             } else {
                 "Update available"
             },
-            width - 354.0,
+            width - 337.0,
             29.0,
-            font,
+            &make_font("Inter", 11.0),
             if installing_update { MUTED } else { TEXT },
         );
+        draw_icon(canvas, ICON_ARROW_DOWN, width - 357.0, 15.0, 16.0, ACCENT);
     }
     rounded(
         canvas,
@@ -331,7 +353,8 @@ fn draw_header(
         8.0,
         hover_color(hover.amount(HoverTarget::OpenFile)),
     );
-    draw_text(canvas, "Open file", width - 197.0, 29.0, font, TEXT);
+    draw_icon(canvas, ICON_FOLDER_OPEN, width - 205.0, 16.0, 14.0, ACCENT);
+    draw_text(canvas, "Open file", width - 185.0, 29.0, font, TEXT);
     draw_text(
         canvas,
         &format!("{} O", primary_modifier()),
@@ -358,7 +381,14 @@ fn draw_sidebar(canvas: &Canvas, editor: &Editor, font: &Font, top: f32, bottom:
     );
     line(canvas, SIDEBAR_WIDTH, top, SIDEBAR_WIDTH, bottom, BORDER);
     draw_text(canvas, "EXPLORER", 20.0, top + 27.0, font, MUTED);
-    draw_text(canvas, "···", SIDEBAR_WIDTH - 37.0, top + 27.0, font, MUTED);
+    draw_icon(
+        canvas,
+        ICON_ELLIPSIS,
+        SIDEBAR_WIDTH - 42.0,
+        top + 14.0,
+        16.0,
+        MUTED,
+    );
     line(canvas, 0.0, top + 43.0, SIDEBAR_WIDTH, top + 43.0, BORDER);
     let project = editor
         .path()
@@ -381,15 +411,15 @@ fn draw_sidebar(canvas: &Canvas, editor: &Editor, font: &Font, top: f32, bottom:
             6.0,
             ACCENT_SOFT,
         );
-        draw_text(
+        draw_icon(
             canvas,
-            "◆",
-            19.0,
-            top + 93.0,
-            font,
+            ICON_FILE_CODE,
+            18.0,
+            top + 80.0,
+            16.0,
             file_color(editor.active_name()),
         );
-        draw_text(canvas, editor.active_name(), 38.0, top + 93.0, font, TEXT);
+        draw_text(canvas, editor.active_name(), 40.0, top + 93.0, font, TEXT);
     } else {
         draw_text(canvas, "No folder opened", 17.0, top + 102.0, font, SUBTLE);
         draw_text(
@@ -433,12 +463,12 @@ fn draw_tabs(canvas: &Canvas, editor: &Editor, font: &Font, width: f32) {
             Rect::from_xywh(SIDEBAR_WIDTH, HEADER_HEIGHT, 176.0, 2.0),
             ACCENT,
         );
-        draw_text(
+        draw_icon(
             canvas,
-            "◆",
-            SIDEBAR_WIDTH + 16.0,
-            HEADER_HEIGHT + 25.0,
-            font,
+            ICON_FILE_CODE,
+            SIDEBAR_WIDTH + 13.0,
+            HEADER_HEIGHT + 12.0,
+            16.0,
             file_color(editor.active_name()),
         );
         draw_text(
@@ -649,48 +679,61 @@ fn draw_welcome(
     let card_y = content_top + 162.0;
     draw_card(
         canvas,
-        "Open a file",
-        "Browse your workspace",
-        &format!("{} + O", primary_modifier()),
+        WelcomeCard {
+            icon: ICON_FOLDER_OPEN,
+            title: "Open a file",
+            description: "Browse your workspace",
+            shortcut: &format!("{} + O", primary_modifier()),
+        },
         Rect::from_xywh(center - 198.0, card_y, 190.0, 78.0),
         font,
         hover.amount(HoverTarget::OpenFile),
     );
     draw_card(
         canvas,
-        "New file",
-        "Start with a blank canvas",
-        &format!("{} + N", primary_modifier()),
+        WelcomeCard {
+            icon: ICON_FILE_PLUS,
+            title: "New file",
+            description: "Start with a blank canvas",
+            shortcut: &format!("{} + N", primary_modifier()),
+        },
         Rect::from_xywh(center + 8.0, card_y, 190.0, 78.0),
         font,
         hover.amount(HoverTarget::NewFile),
     );
 }
 
-fn draw_card(
-    canvas: &Canvas,
-    title: &str,
-    description: &str,
-    shortcut: &str,
-    rect: Rect,
-    font: &Font,
-    hover: f32,
-) {
+fn draw_card(canvas: &Canvas, card: WelcomeCard<'_>, rect: Rect, font: &Font, hover: f32) {
     rounded(canvas, rect, 10.0, hover_color(hover));
     stroke_round(canvas, rect, 10.0, BORDER);
-    draw_text(canvas, title, rect.left + 15.0, rect.top + 25.0, font, TEXT);
+    draw_icon(
+        canvas,
+        card.icon,
+        rect.left + 15.0,
+        rect.top + 13.0,
+        17.0,
+        ACCENT,
+    );
+    draw_text(
+        canvas,
+        card.title,
+        rect.left + 39.0,
+        rect.top + 25.0,
+        font,
+        TEXT,
+    );
     let small = make_font("Inter", 11.0);
     draw_text(
         canvas,
-        description,
-        rect.left + 15.0,
+        card.description,
+        rect.left + 39.0,
         rect.top + 45.0,
         &small,
         MUTED,
     );
     draw_text(
         canvas,
-        shortcut,
+        card.shortcut,
         rect.left + 15.0,
         rect.top + 65.0,
         &small,
@@ -702,7 +745,14 @@ fn draw_search(canvas: &Canvas, editor: &Editor, font: &Font, width: f32, bottom
     let rect = Rect::from_xywh(width - 342.0, bottom - 46.0, 324.0, 36.0);
     rounded(canvas, rect, 8.0, RAISED);
     stroke_round(canvas, rect, 8.0, BORDER);
-    draw_text(canvas, "⌕", rect.left + 12.0, rect.top + 23.0, font, ACCENT);
+    draw_icon(
+        canvas,
+        ICON_SEARCH,
+        rect.left + 10.0,
+        rect.top + 9.0,
+        17.0,
+        ACCENT,
+    );
     let label = if editor.query().is_empty() {
         "Find in file…"
     } else {
@@ -720,7 +770,14 @@ fn draw_search(canvas: &Canvas, editor: &Editor, font: &Font, width: f32, bottom
             TEXT
         },
     );
-    draw_text(canvas, "↵", rect.right - 28.0, rect.top + 23.0, font, MUTED);
+    draw_text(
+        canvas,
+        "ENTER",
+        rect.right - 43.0,
+        rect.top + 22.0,
+        &make_font("Inter", 9.0),
+        MUTED,
+    );
 }
 
 fn draw_status(canvas: &Canvas, editor: &Editor, font: &Font, width: f32, height: f32) {
@@ -834,6 +891,67 @@ fn make_font(family: &str, size: f32) -> Font {
     font
 }
 
+fn draw_icon(canvas: &Canvas, svg: &str, x: f32, y: f32, size: f32, color: Color) {
+    let scale = size / 24.0;
+    let mut paint = Paint::default();
+    paint.set_color(color);
+    paint.set_anti_alias(true);
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(2.0);
+    paint.set_stroke_cap(skia_safe::paint::Cap::Round);
+    paint.set_stroke_join(skia_safe::paint::Join::Round);
+
+    canvas.save();
+    canvas.translate((x, y));
+    canvas.scale((scale, scale));
+    for shape in icon_shapes(svg) {
+        match shape {
+            IconShape::Path(path) => {
+                canvas.draw_path(&path, &paint);
+            }
+            IconShape::Circle(cx, cy, radius) => {
+                canvas.draw_circle((cx, cy), radius, &paint);
+            }
+        }
+    }
+    canvas.restore();
+}
+
+fn icon_shapes(svg: &str) -> Vec<IconShape> {
+    svg.split('<')
+        .skip(1)
+        .filter_map(|element| {
+            let tag = element.split('>').next().unwrap_or_default();
+            if tag.starts_with("path ") {
+                let data = svg_attribute(tag, "d").expect("bundled icon path has d data");
+                Some(IconShape::Path(
+                    Path::from_svg(data).expect("bundled icon path is valid SVG"),
+                ))
+            } else if tag.starts_with("circle ") {
+                let coordinate = |name| {
+                    svg_attribute(tag, name)
+                        .and_then(|value| value.parse::<f32>().ok())
+                        .expect("bundled icon circle has valid coordinates")
+                };
+                Some(IconShape::Circle(
+                    coordinate("cx"),
+                    coordinate("cy"),
+                    coordinate("r"),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn svg_attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let marker = format!("{name}=\"");
+    let start = tag.find(&marker)? + marker.len();
+    let end = tag[start..].find('"')? + start;
+    Some(&tag[start..end])
+}
+
 fn draw_text(canvas: &Canvas, text: &str, x: f32, baseline: f32, font: &Font, color: Color) {
     let mut paint = Paint::default();
     paint.set_color(color);
@@ -896,7 +1014,10 @@ fn hover_color(amount: f32) -> Color {
 
 #[cfg(test)]
 mod tests {
-    use super::{HoverFrame, HoverTarget, hover_target};
+    use super::{
+        HoverFrame, HoverTarget, ICON_ARROW_DOWN, ICON_ELLIPSIS, ICON_FILE_CODE, ICON_FILE_PLUS,
+        ICON_FOLDER_OPEN, ICON_SEARCH, hover_target, icon_shapes,
+    };
     use editor_core::Editor;
 
     #[test]
@@ -935,5 +1056,19 @@ mod tests {
             hover_target(&editor, pointer, 1180.0, 760.0, false),
             HoverTarget::None
         );
+    }
+
+    #[test]
+    fn bundled_vector_icons_have_parseable_geometry() {
+        for svg in [
+            ICON_ARROW_DOWN,
+            ICON_ELLIPSIS,
+            ICON_FILE_CODE,
+            ICON_FILE_PLUS,
+            ICON_FOLDER_OPEN,
+            ICON_SEARCH,
+        ] {
+            assert!(!icon_shapes(svg).is_empty());
+        }
     }
 }

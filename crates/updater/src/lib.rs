@@ -22,6 +22,7 @@ const CURRENT_VERSION: &str = include_str!("../../../VERSION");
 pub struct UpdateInfo {
     /// Version string from the GitHub release tag.
     pub version: String,
+    asset_name: String,
     download_url: String,
     sha256: String,
 }
@@ -54,6 +55,7 @@ pub fn check_latest() -> Result<Option<UpdateInfo>, String> {
     let checksum = checksum_for(&sums, asset_name)?;
     Ok(Some(UpdateInfo {
         version: tag.to_owned(),
+        asset_name: asset_name.to_owned(),
         download_url: asset_url.to_owned(),
         sha256: checksum.to_owned(),
     }))
@@ -72,6 +74,13 @@ pub fn install_and_restart(update: &UpdateInfo) -> Result<(), String> {
 
     let executable =
         env::current_exe().map_err(|error| format!("Could not locate Wive: {error}"))?;
+    if update.asset_name == "wive-linux-x86_64.deb" {
+        #[cfg(target_os = "linux")]
+        return install_debian_package(&bytes, &executable);
+        #[cfg(not(target_os = "linux"))]
+        return Err("This Debian update cannot be installed on this platform".into());
+    }
+
     let parent = executable
         .parent()
         .ok_or_else(|| "Wive executable has no parent directory".to_owned())?;
@@ -174,12 +183,22 @@ fn current_version() -> Result<Version, String> {
 }
 
 fn current_asset_name() -> Option<&'static str> {
-    match (env::consts::OS, env::consts::ARCH) {
+    let executable = env::current_exe().ok()?;
+    asset_name_for_platform(env::consts::OS, env::consts::ARCH, &executable)
+}
+
+fn asset_name_for_platform(os: &str, arch: &str, executable: &Path) -> Option<&'static str> {
+    match (os, arch) {
+        ("linux", "x86_64") if is_system_package_path(executable) => Some("wive-linux-x86_64.deb"),
         ("linux", "x86_64") => Some("wive-linux-x86_64"),
         ("windows", "x86_64") => Some("wive-windows-x86_64.exe"),
         ("macos", "x86_64" | "aarch64") => Some("wive-macos-universal"),
         _ => None,
     }
+}
+
+fn is_system_package_path(executable: &Path) -> bool {
+    executable.starts_with("/usr/bin") || executable.starts_with("/usr/local/bin")
 }
 
 fn write_staged_binary(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -207,6 +226,40 @@ fn write_staged_binary(path: &Path, bytes: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(path);
     }
     result
+}
+
+#[cfg(target_os = "linux")]
+fn install_debian_package(bytes: &[u8], executable: &Path) -> Result<(), String> {
+    let package = env::temp_dir().join(format!("wive-update-{}.deb", process::id()));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&package)
+        .map_err(|error| format!("Could not stage Debian update: {error}"))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| {
+            let _ = fs::remove_file(&package);
+            format!("Could not write Debian update: {error}")
+        })?;
+    drop(file);
+
+    let status = Command::new("pkexec")
+        .args(["dpkg", "--install"])
+        .arg(&package)
+        .status()
+        .map_err(|error| format!("Could not request permission to install Wive: {error}"));
+    let _ = fs::remove_file(&package);
+    let status = status?;
+    if !status.success() {
+        return Err(format!("Debian installer exited with status {status}"));
+    }
+
+    Command::new(executable)
+        .args(env::args_os().skip(1))
+        .spawn()
+        .map_err(|error| format!("Updated Wive, but could not restart it: {error}"))?;
+    process::exit(0);
 }
 
 #[cfg(unix)]
@@ -285,7 +338,9 @@ fn quote_windows_argument(value: &std::ffi::OsStr) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum_for, current_asset_name, current_version};
+    use std::path::Path;
+
+    use super::{asset_name_for_platform, checksum_for, current_asset_name, current_version};
 
     #[test]
     fn version_file_contains_valid_semver() {
@@ -313,5 +368,17 @@ mod tests {
         {
             assert!(current_asset_name().is_some());
         }
+    }
+
+    #[test]
+    fn selects_debian_installer_for_system_installations() {
+        assert_eq!(
+            asset_name_for_platform("linux", "x86_64", Path::new("/usr/bin/wive")),
+            Some("wive-linux-x86_64.deb")
+        );
+        assert_eq!(
+            asset_name_for_platform("linux", "x86_64", Path::new("/home/user/bin/wive")),
+            Some("wive-linux-x86_64")
+        );
     }
 }

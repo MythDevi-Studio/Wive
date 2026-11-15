@@ -8,7 +8,7 @@
 
 <p align="center">
   A focused, lightweight desktop code editor made with Rust and Skia.
-  Designed by Aleverio for Myth Devi Studio (MythDS).
+  Designed by Aleverio for Myth Devi Studio (NythDS).
 </p>
 
 <p align="center">
@@ -33,6 +33,9 @@ gutter, and small motion details that keep the editor feeling responsive.
 - Check GitHub Releases for updates in the background, then download and verify updates before installing.
 
 ## Get started
+
+Prebuilt installers are available from the
+[latest GitHub release](https://github.com/MythDevi-Studio/Wive/releases/latest).
 
 Install [Rust](https://www.rust-lang.org/tools/install), then build and launch:
 
@@ -65,7 +68,8 @@ On macOS, use `Cmd` in place of `Ctrl` for the shortcuts listed above.
 
 Wive is an original project by **Aleverio** and **Myth Devi Studio (NythDS)**. Its interface,
 branding, and implementation are created for this project. The codebase uses Rust, Skia,
-Winit, and Softbuffer.
+Winit, and Softbuffer. The interface uses Lucide vector icons; see
+[`assets/icons/LICENSE`](assets/icons/LICENSE) for their license notices.
 
 ## Project layout
 
@@ -78,7 +82,8 @@ crates/syntax/      Lightweight language detection and tokenization
 crates/ui/          Skia rendering, layout, and pointer hit testing
 crates/platform/    Native file dialogs and clipboard access
 crates/updater/     GitHub release checks and checksum-verified updates
-assets/             Wive application icon
+assets/             Wive application icon and licensed UI vector icons
+packaging/          Windows, macOS, and Linux release packaging metadata
 ```
 
 Run the checks for all workspace crates with:
@@ -89,8 +94,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 Tagged `v*` releases run formatting and lint checks, workspace tests, and then build
-Windows, Linux, and universal macOS binaries. The release workflow publishes the binaries
-and their `SHA256SUMS` manifest, which Wive uses to verify in-app updates.
+Windows, Linux, and universal macOS binaries. GitHub Actions also packages a per-user
+Windows setup executable, a macOS disk image containing `Wive.app`, and an x86_64 Debian
+package. The release includes the raw platform binaries used by the updater and a
+`SHA256SUMS` manifest to verify the release payloads.
+
+On Linux, install the Debian package with `sudo apt install ./wive-linux-x86_64.deb`.
+The in-app updater uses that package for Wive installed under `/usr/bin` and requests
+authorization through the system's PolicyKit prompt. On Windows, the per-user installer
+keeps the executable writable for in-app updates. On macOS, install Wive in a user-writable
+Applications folder to allow the updater to replace the app binary; installations requiring
+administrator access can use the latest disk image from Releases.
+
 The application version comes from the root `VERSION` file. Changing it on the default
 `Dev` branch validates the version, creates a matching `v*` tag, and starts the release
 workflow; changing it in a pull request runs CI but does not publish a release.

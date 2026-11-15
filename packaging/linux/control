@@ -1,0 +1,9 @@
+Package: wive
+Version: @VERSION@
+Section: devel
+Priority: optional
+Architecture: amd64
+Maintainer: Myth Devi Studio (NythDS)
+Depends: libc6, libfontconfig1, libfreetype6, libx11-6, libxi6, libxcursor1, libxrandr2, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libwayland-cursor0, libwayland-egl1, libegl1, libgl1
+Description: A focused desktop code editor
+ Wive is a lightweight code editor built by Aleverio and Myth Devi Studio.

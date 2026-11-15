@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wive
+Comment=A focused desktop code editor
+Exec=wive %F
+Icon=wive
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true

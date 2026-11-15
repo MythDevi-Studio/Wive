@@ -72,10 +72,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: linux-x86_64
             asset: wive-linux-x86_64
           - os: windows-latest
+            platform: windows-x86_64
             asset: wive-windows-x86_64.exe
           - os: macos-latest
+            platform: macos-universal
             asset: wive-macos-universal
     runs-on: ${{ matrix.os }}
     steps:
@@ -116,10 +119,73 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/release/wive${{ runner.os == 'Windows' && '.exe' || '' }}" "dist/${{ matrix.asset }}"
+      - name: Build Linux Debian installer
+        if: runner.os == 'Linux'
+        env:
+          WIVE_VERSION: ${{ inputs.release_tag && inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${WIVE_VERSION#v}"
+          package_root="build/deb-root"
+          mkdir -p "$package_root/DEBIAN" \
+            "$package_root/usr/bin" \
+            "$package_root/usr/share/applications" \
+            "$package_root/usr/share/icons/hicolor/scalable/apps" \
+            "$package_root/usr/share/doc/wive"
+          install -m 0755 target/release/wive "$package_root/usr/bin/wive"
+          install -m 0644 packaging/linux/wive.desktop "$package_root/usr/share/applications/wive.desktop"
+          install -m 0644 assets/wive-icon.svg "$package_root/usr/share/icons/hicolor/scalable/apps/wive.svg"
+          install -m 0644 LICENSE "$package_root/usr/share/doc/wive/LICENSE"
+          install -m 0644 assets/icons/LICENSE "$package_root/usr/share/doc/wive/Lucide-LICENSE"
+          sed "s/@VERSION@/$version/" packaging/linux/control > "$package_root/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$package_root" dist/wive-linux-x86_64.deb
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:WIVE_VERSION = (Get-Content VERSION -Raw).Trim()
+          choco install innosetup --yes --no-progress
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) {
+            throw "Inno Setup compiler was not installed at $compiler"
+          }
+          & $compiler ".\packaging\windows\wive.iss"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+      - name: Package macOS application and disk image
+        if: runner.os == 'macOS'
+        env:
+          WIVE_VERSION: ${{ inputs.release_tag && inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${WIVE_VERSION#v}"
+          app="build/Wive.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          brew install librsvg
+          install -m 0755 "dist/${{ matrix.asset }}" "$app/Contents/MacOS/wive"
+          sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          iconset="build/Wive.iconset"
+          mkdir -p "$iconset"
+          for size in 16 32 128 256 512; do
+            doubled=$((size * 2))
+            rsvg-convert -w "$size" -h "$size" assets/wive-icon.svg \
+              -o "$iconset/icon_${size}x${size}.png"
+            rsvg-convert -w "$doubled" -h "$doubled" assets/wive-icon.svg \
+              -o "$iconset/icon_${size}x${size}@2x.png"
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/Wive.icns"
+          cp assets/icons/LICENSE "$app/Contents/Resources/Lucide-LICENSE"
+          hdiutil create \
+            -volname Wive \
+            -srcfolder "$app" \
+            -ov \
+            -format UDZO \
+            "dist/Wive-macos-universal.dmg"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
+          name: wive-${{ matrix.platform }}
+          path: dist/*
           if-no-files-found: error
 
   publish:
@@ -138,8 +204,10 @@ jobs:
           pattern: wive-*
           path: release-assets
           merge-multiple: true
+      - name: Include third-party icon license notice
+        run: cp assets/icons/LICENSE release-assets/THIRD_PARTY_NOTICES-lucide.txt
       - name: Generate SHA-256 manifest
-        run: cd release-assets && sha256sum wive-* > SHA256SUMS
+        run: cd release-assets && sha256sum -- * > SHA256SUMS
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
