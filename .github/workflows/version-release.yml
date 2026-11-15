@@ -1,0 +1,61 @@
+name: Version release
+
+on:
+  push:
+    branches: [Dev]
+    paths:
+      - VERSION
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: version-release
+  cancel-in-progress: false
+
+jobs:
+  tag-and-dispatch:
+    name: Tag version and start release pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate VERSION as a semantic version
+        run: cargo test --locked -p updater version_file_contains_valid_semver
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Create or verify release tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          existing="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          if [[ -n "$existing" ]]; then
+            git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+            existing="$(git rev-parse "$TAG^{commit}")"
+            if [[ "$existing" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $TAG already points to a different commit"
+              exit 1
+            fi
+          fi
+          if [[ -z "$existing" ]]; then
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+          fi
+      - name: Start release workflow on the version tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to dispatch."
+            exit 0
+          fi
+          gh workflow run release.yml --ref "$TAG"

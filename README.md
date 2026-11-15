@@ -91,6 +91,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 Tagged `v*` releases run formatting and lint checks, workspace tests, and then build
 Windows, Linux, and universal macOS binaries. The release workflow publishes the binaries
 and their `SHA256SUMS` manifest, which Wive uses to verify in-app updates.
+The application version comes from the root `VERSION` file. Changing it on the default
+`Dev` branch validates the version, creates a matching `v*` tag, and starts the release
+workflow; changing it in a pull request runs CI but does not publish a release.
 
 ## License
 

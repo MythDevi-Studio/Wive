@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 const REPOSITORY: &str = "MythDevi-Studio/Wive";
 const MAX_DOWNLOAD_SIZE: u64 = 256 * 1024 * 1024;
 const USER_AGENT: &str = "Wive-Updater";
+const CURRENT_VERSION: &str = include_str!("../../../VERSION");
 
 /// A newer Wive release and its verified release asset metadata.
 #[derive(Clone, Debug)]
@@ -38,8 +39,7 @@ pub fn check_latest() -> Result<Option<UpdateInfo>, String> {
         .ok_or_else(|| "GitHub release is missing its tag".to_owned())?;
     let latest = Version::parse(tag.trim_start_matches('v'))
         .map_err(|error| format!("Invalid release version: {error}"))?;
-    let current = Version::parse(env!("CARGO_PKG_VERSION"))
-        .map_err(|error| format!("Invalid application version: {error}"))?;
+    let current = current_version()?;
     if latest <= current {
         return Ok(None);
     }
@@ -169,6 +169,10 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn current_version() -> Result<Version, String> {
+    Version::parse(CURRENT_VERSION.trim()).map_err(|error| format!("Invalid VERSION file: {error}"))
+}
+
 fn current_asset_name() -> Option<&'static str> {
     match (env::consts::OS, env::consts::ARCH) {
         ("linux", "x86_64") => Some("wive-linux-x86_64"),
@@ -281,7 +285,12 @@ fn quote_windows_argument(value: &std::ffi::OsStr) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{checksum_for, current_asset_name};
+    use super::{checksum_for, current_asset_name, current_version};
+
+    #[test]
+    fn version_file_contains_valid_semver() {
+        assert!(current_version().is_ok());
+    }
 
     #[test]
     fn reads_standard_sha256sum_manifest_lines() {
