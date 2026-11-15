@@ -1,14 +1,12 @@
 use std::path::PathBuf;
 
 use editor_core::Editor;
-use platform::{CloseChoice, confirm_close, pick_open_file, pick_save_file};
+use platform::{CloseChoice, confirm_save_changes, pick_open_file, pick_save_file};
 
 pub fn open_file(editor: &mut Editor) {
-    if editor.is_modified() {
-        editor.set_status("Save your changes before opening another file");
-        return;
-    }
-    if let Some(path) = pick_open_file() {
+    if let Some(path) = pick_open_file()
+        && resolve_unsaved_changes(editor, "opening another file")
+    {
         let result = editor.open(path);
         show_file_result(editor, result);
     }
@@ -31,14 +29,31 @@ pub fn save_as(editor: &mut Editor) {
 }
 
 pub fn new_file(editor: &mut Editor) {
-    editor.new_file();
+    if !editor.is_modified() {
+        editor.new_file();
+        return;
+    }
+    match confirm_save_changes("creating a new file") {
+        CloseChoice::Save => {
+            save_file(editor);
+            if !editor.is_modified() {
+                editor.new_file();
+            }
+        }
+        CloseChoice::Discard => editor.discard_and_new_file(),
+        CloseChoice::Cancel => {}
+    }
 }
 
 pub fn can_close(editor: &mut Editor) -> bool {
+    resolve_unsaved_changes(editor, "closing Wive")
+}
+
+fn resolve_unsaved_changes(editor: &mut Editor, action: &str) -> bool {
     if !editor.is_modified() {
         return true;
     }
-    match confirm_close() {
+    match confirm_save_changes(action) {
         CloseChoice::Save => {
             save_file(editor);
             !editor.is_modified()

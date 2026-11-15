@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-/// User choice when closing a document with unsaved edits.
+/// User choice when replacing or closing a document with unsaved edits.
 pub enum CloseChoice {
     /// Save, then close if saving succeeds.
     Save,
@@ -39,11 +39,11 @@ pub fn clipboard_read() -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Asks the user whether to save pending changes before closing the window.
-pub fn confirm_close() -> CloseChoice {
+/// Asks whether to save pending changes before replacing or closing a document.
+pub fn confirm_save_changes(action: &str) -> CloseChoice {
     match rfd::MessageDialog::new()
         .set_title("Unsaved changes")
-        .set_description("Save your changes before closing Wive?")
+        .set_description(format!("Save your changes before {action}?"))
         .set_buttons(rfd::MessageButtons::YesNoCancel)
         .show()
     {

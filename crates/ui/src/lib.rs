@@ -38,6 +38,7 @@ const ICON_FILE_CODE: &str = include_str!("../../../assets/icons/file-code.svg")
 const ICON_FILE_PLUS: &str = include_str!("../../../assets/icons/file-plus.svg");
 const ICON_FOLDER_OPEN: &str = include_str!("../../../assets/icons/folder-open.svg");
 const ICON_SEARCH: &str = include_str!("../../../assets/icons/search.svg");
+const ICON_SAVE: &str = include_str!("../../../assets/icons/save.svg");
 
 enum IconShape {
     Path(Path),
@@ -55,6 +56,8 @@ struct WelcomeCard<'a> {
 pub enum PointerAction {
     /// Ask the platform layer to show an Open dialog.
     OpenFile,
+    /// Save the current document.
+    SaveFile,
     /// Start a new document.
     NewFile,
     /// Begin installing the available update.
@@ -71,6 +74,8 @@ pub enum HoverTarget {
     None,
     /// Open-file control or welcome card.
     OpenFile,
+    /// Save-file control in the application header.
+    SaveFile,
     /// New-file welcome card.
     NewFile,
     /// Update control in the application header.
@@ -170,6 +175,9 @@ pub fn hover_target(
     if y < HEADER_HEIGHT && x > width - 215.0 && x < width - 131.0 {
         return HoverTarget::OpenFile;
     }
+    if y < HEADER_HEIGHT && x > width - 122.0 && x < width - 38.0 {
+        return HoverTarget::SaveFile;
+    }
     if update_available && y < HEADER_HEIGHT && x > width - 370.0 && x < width - 232.0 {
         return HoverTarget::Update;
     }
@@ -191,6 +199,28 @@ pub fn hover_target(
     HoverTarget::None
 }
 
+/// Maps a pointer position to the closest character in the visible editor text.
+pub fn caret_at(editor: &Editor, x: f32, y: f32, width: f32, height: f32) -> Option<usize> {
+    let top = HEADER_HEIGHT + TAB_HEIGHT;
+    let bottom = height - FOOTER_HEIGHT;
+    let text_left = SIDEBAR_WIDTH + GUTTER_WIDTH + 14.0;
+    if y < top || y >= bottom || x < text_left || x > width {
+        return None;
+    }
+    if editor.search_open()
+        && x >= width - 342.0
+        && y >= bottom - 46.0
+        && x <= width - 18.0
+        && y <= bottom - 10.0
+    {
+        return None;
+    }
+    let row = ((y - top - 7.0) / LINE_HEIGHT).max(0.0) as usize;
+    let line_index = (editor.scroll_line() + row).min(editor.text().len_lines().saturating_sub(1));
+    let column = ((x - text_left) / 8.0).round().max(0.0) as usize;
+    Some(editor.text().line_to_char(line_index) + column.min(line_content_len(editor, line_index)))
+}
+
 /// Handles a click and updates the caret for clicks inside the editor.
 pub fn handle_pointer(
     editor: &mut Editor,
@@ -205,16 +235,19 @@ pub fn handle_pointer(
         if update_available && x > width - 370.0 && x < width - 232.0 {
             return PointerAction::InstallUpdate;
         }
-        return if x > width - 224.0 && x < width - 105.0 {
+        if x > width - 122.0 && x < width - 38.0 {
+            return PointerAction::SaveFile;
+        }
+        return if x > width - 215.0 && x < width - 131.0 {
             PointerAction::OpenFile
         } else {
             PointerAction::None
         };
     }
     let top = HEADER_HEIGHT + TAB_HEIGHT;
-    let bottom = height - FOOTER_HEIGHT;
     let left = SIDEBAR_WIDTH;
     if editor.path().is_none() && editor.is_empty() && y >= top {
+        let bottom = height - FOOTER_HEIGHT;
         let center = (left + width) * 0.5;
         let panel_top = top + ((bottom - top) * 0.5 - 152.0).max(45.0);
         let card_y = panel_top + 162.0;
@@ -228,15 +261,9 @@ pub fn handle_pointer(
         }
         return PointerAction::None;
     }
-    if y < top || x < left + GUTTER_WIDTH {
-        return PointerAction::None;
+    if let Some(position) = caret_at(editor, x, y, width, height) {
+        editor.set_caret(position, extend_selection);
     }
-    let row = ((y - top - 7.0) / LINE_HEIGHT).max(0.0) as usize;
-    let line_index = (editor.scroll_line() + row).min(editor.text().len_lines().saturating_sub(1));
-    let column = ((x - left - GUTTER_WIDTH - 14.0) / 8.0).max(0.0) as usize;
-    let position =
-        editor.text().line_to_char(line_index) + column.min(line_content_len(editor, line_index));
-    editor.set_caret(position, extend_selection);
     PointerAction::None
 }
 
@@ -355,14 +382,14 @@ fn draw_header(
     );
     draw_icon(canvas, ICON_FOLDER_OPEN, width - 205.0, 16.0, 14.0, ACCENT);
     draw_text(canvas, "Open file", width - 185.0, 29.0, font, TEXT);
-    draw_text(
+    rounded(
         canvas,
-        &format!("{} O", primary_modifier()),
-        width - 122.0,
-        29.0,
-        font,
-        MUTED,
+        Rect::from_xywh(width - 122.0, 7.0, 84.0, 34.0),
+        8.0,
+        hover_color(hover.amount(HoverTarget::SaveFile)),
     );
+    draw_icon(canvas, ICON_SAVE, width - 112.0, 16.0, 14.0, ACCENT);
+    draw_text(canvas, "Save", width - 92.0, 29.0, font, TEXT);
     line(
         canvas,
         width - 224.0,
@@ -1016,7 +1043,8 @@ fn hover_color(amount: f32) -> Color {
 mod tests {
     use super::{
         HoverFrame, HoverTarget, ICON_ARROW_DOWN, ICON_ELLIPSIS, ICON_FILE_CODE, ICON_FILE_PLUS,
-        ICON_FOLDER_OPEN, ICON_SEARCH, hover_target, icon_shapes,
+        ICON_FOLDER_OPEN, ICON_SAVE, ICON_SEARCH, PointerAction, caret_at, handle_pointer,
+        hover_target, icon_shapes,
     };
     use editor_core::Editor;
 
@@ -1059,6 +1087,24 @@ mod tests {
     }
 
     #[test]
+    fn save_and_open_controls_have_separate_hit_targets() {
+        let editor = Editor::new();
+        assert_eq!(
+            hover_target(&editor, Some((1000.0, 20.0)), 1180.0, 760.0, false),
+            HoverTarget::OpenFile
+        );
+        assert_eq!(
+            hover_target(&editor, Some((1100.0, 20.0)), 1180.0, 760.0, false),
+            HoverTarget::SaveFile
+        );
+        let mut editor = Editor::new();
+        assert!(matches!(
+            handle_pointer(&mut editor, 1100.0, 20.0, 1180.0, 760.0, false, false),
+            PointerAction::SaveFile
+        ));
+    }
+
+    #[test]
     fn bundled_vector_icons_have_parseable_geometry() {
         for svg in [
             ICON_ARROW_DOWN,
@@ -1066,9 +1112,25 @@ mod tests {
             ICON_FILE_CODE,
             ICON_FILE_PLUS,
             ICON_FOLDER_OPEN,
+            ICON_SAVE,
             ICON_SEARCH,
         ] {
             assert!(!icon_shapes(svg).is_empty());
         }
+    }
+
+    #[test]
+    fn pointer_maps_to_visible_text_and_rejects_non_editor_regions() {
+        let editor = Editor::new();
+        assert_eq!(caret_at(&editor, 316.0, 100.0, 1180.0, 760.0), Some(0));
+        assert_eq!(caret_at(&editor, 100.0, 100.0, 1180.0, 760.0), None);
+        assert_eq!(caret_at(&editor, 320.0, 20.0, 1180.0, 760.0), None);
+    }
+
+    #[test]
+    fn search_bar_clicks_do_not_move_the_document_caret() {
+        let mut editor = Editor::new();
+        editor.open_search();
+        assert_eq!(caret_at(&editor, 900.0, 700.0, 1180.0, 760.0), None);
     }
 }

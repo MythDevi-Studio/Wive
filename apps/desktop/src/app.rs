@@ -13,7 +13,8 @@ use foundation::PRODUCT_NAME;
 use platform::{clipboard_read, clipboard_write};
 use softbuffer::{Context, Surface};
 use ui::{
-    HoverFrame, HoverTarget, PointerAction, handle_pointer, hover_target, render, window_icon,
+    HoverFrame, HoverTarget, PointerAction, caret_at, handle_pointer, hover_target, render,
+    window_icon,
 };
 use winit::{
     application::ApplicationHandler,
@@ -37,6 +38,7 @@ pub struct WiveApp {
     context: Option<Context<Arc<Window>>>,
     surface: Option<Surface<Arc<Window>, Arc<Window>>>,
     mouse: Option<(f32, f32)>,
+    mouse_selecting: bool,
     modifiers: ModifiersState,
     focused: bool,
     next_cursor_blink: Instant,
@@ -65,6 +67,7 @@ impl WiveApp {
             context: None,
             surface: None,
             mouse: None,
+            mouse_selecting: false,
             modifiers: ModifiersState::empty(),
             focused: true,
             next_cursor_blink: Instant::now(),
@@ -86,6 +89,55 @@ impl WiveApp {
     fn key_pressed(&mut self, key: &Key, repeat: bool) {
         let command = self.modifiers.control_key() || self.modifiers.super_key();
         let shift = self.modifiers.shift_key();
+        if self.modifiers.control_key() && !self.editor.search_open() {
+            match key {
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.editor.move_word(-1, shift);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.editor.move_word(1, shift);
+                    return;
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.editor.delete_word_backward();
+                    return;
+                }
+                Key::Named(NamedKey::Delete) => {
+                    self.editor.delete_word_forward();
+                    return;
+                }
+                Key::Named(NamedKey::Home) => {
+                    self.editor.move_document_edge(false, shift);
+                    return;
+                }
+                Key::Named(NamedKey::End) => {
+                    self.editor.move_document_edge(true, shift);
+                    return;
+                }
+                _ => {}
+            }
+        } else if self.modifiers.super_key() && !self.editor.search_open() {
+            match key {
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.editor.move_line_edge(false, shift);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.editor.move_line_edge(true, shift);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.editor.move_document_edge(false, shift);
+                    return;
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.editor.move_document_edge(true, shift);
+                    return;
+                }
+                _ => {}
+            }
+        }
         if command {
             if repeat {
                 return;
@@ -124,8 +176,8 @@ impl WiveApp {
             Key::Named(NamedKey::Backspace) => self.editor.delete_backward(),
             Key::Named(NamedKey::Delete) => self.editor.delete_forward(),
             Key::Named(NamedKey::Enter) if self.editor.search_open() => self.editor.find_next(),
-            Key::Named(NamedKey::Enter) => self.editor.replace_selection("\n"),
-            Key::Named(NamedKey::Tab) => self.editor.replace_selection("    "),
+            Key::Named(NamedKey::Enter) => self.editor.insert_newline(),
+            Key::Named(NamedKey::Tab) => self.editor.indent_selection(shift),
             Key::Named(NamedKey::Escape) => self.editor.close_search(),
             Key::Named(NamedKey::F3) => self.editor.find_next(),
             _ => {}
@@ -176,8 +228,20 @@ impl WiveApp {
     fn update_mouse(&mut self, position: PhysicalPosition<f64>) {
         if let Some(window) = &self.window {
             let scale = window.scale_factor();
-            self.mouse = Some(((position.x / scale) as f32, (position.y / scale) as f32));
+            let logical_position = ((position.x / scale) as f32, (position.y / scale) as f32);
+            self.mouse = Some(logical_position);
             let size = window.inner_size();
+            if self.mouse_selecting
+                && let Some(position) = caret_at(
+                    &self.editor,
+                    logical_position.0,
+                    logical_position.1,
+                    size.width as f32 / scale as f32,
+                    size.height as f32 / scale as f32,
+                )
+            {
+                self.editor.set_caret(position, true);
+            }
             let target = hover_target(
                 &self.editor,
                 self.mouse,
@@ -358,6 +422,9 @@ impl ApplicationHandler for WiveApp {
             WindowEvent::ScaleFactorChanged { .. } => self.request_redraw(),
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
+                if !focused {
+                    self.mouse_selecting = false;
+                }
                 self.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -370,20 +437,31 @@ impl ApplicationHandler for WiveApp {
                 self.request_redraw();
             }
             WindowEvent::MouseInput { state, button, .. }
+                if button == MouseButton::Left && state == ElementState::Released =>
+            {
+                self.mouse_selecting = false;
+            }
+            WindowEvent::MouseInput { state, button, .. }
                 if button == MouseButton::Left && state == ElementState::Pressed =>
             {
                 if let (Some((x, y)), Some(window)) = (self.mouse, self.window.as_ref()) {
                     let size = window.inner_size();
+                    let width = size.width as f32 / window.scale_factor() as f32;
+                    let height = size.height as f32 / window.scale_factor() as f32;
+                    self.mouse_selecting = (self.editor.path().is_some()
+                        || !self.editor.is_empty())
+                        && caret_at(&self.editor, x, y, width, height).is_some();
                     match handle_pointer(
                         &mut self.editor,
                         x,
                         y,
-                        size.width as f32 / window.scale_factor() as f32,
-                        size.height as f32 / window.scale_factor() as f32,
+                        width,
+                        height,
                         self.modifiers.shift_key(),
                         self.update.is_some() && !self.installing_update,
                     ) {
                         PointerAction::OpenFile => lifecycle::open_file(&mut self.editor),
+                        PointerAction::SaveFile => lifecycle::save_file(&mut self.editor),
                         PointerAction::NewFile => lifecycle::new_file(&mut self.editor),
                         PointerAction::InstallUpdate => self.install_update(),
                         PointerAction::None => {}

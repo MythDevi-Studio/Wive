@@ -25,10 +25,13 @@ gutter, and small motion details that keep the editor feeling responsive.
 
 - Open and save files with native file dialogs, or pass a file path when launching Wive.
 - Edit text with Unicode-aware cursor movement, selection, and line navigation.
+- Select text by dragging or with the keyboard; move and delete by word with standard shortcuts.
 - Use undo and redo, find in the current file, and copy, cut, paste, and select all.
-- Work with a project sidebar, line numbers, file tabs, and a live cursor position.
+- Indent selected lines without replacing them, and preserve indentation and line endings on Enter.
+- Work with a project sidebar, line numbers, an active file tab, and a live cursor position.
 - Read Rust, JavaScript/TypeScript, Python, JSON, and other text with lightweight syntax colors.
 - Keep your changes safe: Wive warns you to save before switching files or starting a new file.
+- Save, discard, or cancel before replacing an unsaved document; undo can return to the saved state.
 - Render the interface with Skia and adapt it to window resizing and display scaling.
 - Check GitHub Releases for updates in the background, then download and verify updates before installing.
 
@@ -61,6 +64,8 @@ cargo run --release -p wive-desktop -- path/to/file.rs
 | Select all | `Ctrl+A` / `Cmd+A` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Move and select | Arrow keys / `Shift` + arrow keys |
+| Move by word / delete by word | `Ctrl+←/→` / `Ctrl+Backspace/Delete` |
+| Indent / outdent | `Tab` / `Shift+Tab` |
 
 On macOS, use `Cmd` in place of `Ctrl` for the shortcuts listed above.
 
