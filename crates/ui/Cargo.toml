@@ -1,0 +1,17 @@
+[package]
+name = "ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+editor-core.workspace = true
+skia-safe.workspace = true
+softbuffer.workspace = true
+syntax.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

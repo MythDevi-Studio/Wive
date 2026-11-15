@@ -1,0 +1,23 @@
+[package]
+name = "wive-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "wive"
+path = "src/main.rs"
+
+[dependencies]
+editor-core.workspace = true
+foundation.workspace = true
+platform.workspace = true
+ui.workspace = true
+updater.workspace = true
+softbuffer.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

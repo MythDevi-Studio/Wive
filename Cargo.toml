@@ -1,8 +1,51 @@
-[package]
-name = "Wive"
+[workspace]
+resolver = "3"
+members = [
+    "apps/desktop",
+    "crates/foundation",
+    "crates/text",
+    "crates/syntax",
+    "crates/editor-core",
+    "crates/ui",
+    "crates/platform",
+    "crates/updater",
+]
+default-members = ["apps/desktop"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Wive - A modern code editor built with Rust and Skia"
-authors = ["MythDS Contributors"]
+rust-version = "1.92"
+license = "Apache-2.0"
+authors = ["Aleverio", "Myth Devi Studio (NythDS)"]
 
-[dependencies]
+[workspace.dependencies]
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
+editor-core = { path = "crates/editor-core" }
+foundation = { path = "crates/foundation" }
+platform = { path = "crates/platform" }
+rfd = "0.18"
+ropey = "1.6"
+semver = "1"
+serde_json = "1"
+sha2 = "0.10"
+skia-safe = { version = "=0.86.1", default-features = false, features = ["binary-cache", "pdf"] }
+softbuffer = "0.4.8"
+syntax = { path = "crates/syntax" }
+text = { path = "crates/text" }
+ui = { path = "crates/ui" }
+updater = { path = "crates/updater" }
+ureq = "2.12"
+winit = "0.30.12"
+
+[workspace.lints.rust]
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+uninlined_format_args = "warn"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+codegen-units = 1
+strip = true
